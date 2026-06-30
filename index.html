@@ -435,11 +435,93 @@ function changeUser(){
 }
 
 /* ── Share (per-person export) ── */
+function dataURLtoBlob(dataURL){
+  var arr=dataURL.split(','), mime=arr[0].match(/:(.*?);/)[1];
+  var bstr=atob(arr[1]), n=bstr.length, u=new Uint8Array(n);
+  while(n--) u[n]=bstr.charCodeAt(n);
+  return new Blob([u],{type:mime});
+}
+
+function buildExportPayload(pid){
+  var p=PEOPLE.find(function(x){return x.id===pid;});
+  var s=state[pid]||{};
+  // strip photo data from JSON (photos go as separate files)
+  var logsClean={};
+  if(s.logs) Object.keys(s.logs).forEach(function(lid){
+    logsClean[lid]=(s.logs[lid]||[]).map(function(e){
+      return {title:e.title,note:e.note,photo:!!e.photo};
+    });
+  });
+  return {v:'1',pid:pid,name:p.name,role:p.role,ts:new Date().toISOString(),
+          data:{logs:logsClean,memos:s.memos||{}}};
+}
+
+function collectPhotoFiles(pid){
+  var files=[], s=state[pid]||{};
+  if(!s.logs) return files;
+  Object.keys(s.logs).forEach(function(lid){
+    (s.logs[lid]||[]).forEach(function(e,i){
+      if(e.photo&&e.photo.startsWith('data:')){
+        try{
+          var blob=dataURLtoBlob(e.photo);
+          var name=(e.title||('사진'+(i+1))).replace(/[^가-힣\w]/g,'_').substring(0,20)+'.jpg';
+          files.push(new File([blob],name,{type:'image/jpeg'}));
+        }catch(err){}
+      }
+    });
+  });
+  return files;
+}
+
 function shareData(pid){
   var p=PEOPLE.find(function(x){return x.id===pid;});
-  var payload=JSON.stringify({v:'1',pid:pid,name:p.name,role:p.role,ts:new Date().toISOString(),data:state[pid]||{}});
+  var payload=buildExportPayload(pid);
+  var jsonStr=JSON.stringify(payload);
+  var photoFiles=collectPhotoFiles(pid);
+
+  // Try native share with files (iOS Safari 15+)
+  if(navigator.share){
+    var textBlob=new Blob([jsonStr],{type:'text/plain'});
+    var textFile=new File([textBlob],p.name+'_기록.txt',{type:'text/plain'});
+    var allFiles=photoFiles.length>0?[textFile].concat(photoFiles):[textFile];
+    var canShare=!navigator.canShare||navigator.canShare({files:allFiles});
+    if(canShare){
+      navigator.share({title:p.name+' 인터참 현장기록',files:allFiles})
+        .then(function(){ toast('📤 공유 완료!'); })
+        .catch(function(e){ if(e.name!=='AbortError') showShareModal(jsonStr,photoFiles); });
+      return;
+    }
+  }
+  showShareModal(jsonStr,photoFiles);
+}
+
+function showShareModal(jsonStr,photoFiles){
   var ta=document.getElementById('smout');
-  ta.value=payload;
+  ta.value=jsonStr;
+  // Show photo count hint
+  var sub=document.querySelector('#smbg .msub');
+  if(photoFiles&&photoFiles.length>0){
+    sub.innerHTML='텍스트 데이터를 복사해서 카톡에 보내고<br>사진 <b>'+photoFiles.length+'장</b>은 아래 버튼으로 따로 공유하세요.';
+    var pb=document.getElementById('smphotoBtn');
+    if(!pb){
+      pb=document.createElement('button');
+      pb.id='smphotoBtn'; pb.className='bcopy';
+      pb.style.background='#1a73e8';
+      pb.textContent='📸 사진 '+photoFiles.length+'장 공유';
+      document.querySelector('#smbg .mbtns').insertBefore(pb,document.querySelector('#smbg .mbtns').firstChild);
+    } else {
+      pb.textContent='📸 사진 '+photoFiles.length+'장 공유';
+    }
+    pb.onclick=function(){
+      if(navigator.share&&navigator.canShare&&navigator.canShare({files:photoFiles})){
+        navigator.share({title:'인터참 현장 사진',files:photoFiles}).catch(function(){});
+      } else { toast('이 기기에서는 사진을 카톡으로 직접 전송해 주세요'); }
+    };
+  } else {
+    sub.innerHTML='아래 텍스트를 복사해서 카톡에 붙여넣기 해주세요.';
+    var pb=document.getElementById('smphotoBtn');
+    if(pb) pb.remove();
+  }
   document.getElementById('smbg').classList.add('on');
   setTimeout(function(){ ta.select(); ta.setSelectionRange(0,99999); },100);
 }
@@ -672,74 +754,4 @@ function buildEntry(pid, log, entries, idx){
     if(nta.classList.contains('vis')) nta.focus();
   });
   nrow.appendChild(ntog); nrow.appendChild(nta);
-  card.appendChild(nrow);
-
-  return card;
-}
-
-function buildMemoSec(pid, memo){
-  var sec=document.createElement('div'); sec.className='sec';
-  var lbl=document.createElement('p'); lbl.className='mlbl'; lbl.textContent=memo.label;
-  var hint=document.createElement('p'); hint.className='mhint'; hint.textContent=memo.hint;
-  var ta=document.createElement('textarea');
-  ta.className='mta'; ta.placeholder=memo.hint; ta.rows=3; ta.value=getMemo(pid,memo.id);
-  ta.addEventListener('input',function(){ setMemo(pid,memo.id,ta.value); saveS(pid); });
-  sec.appendChild(lbl); sec.appendChild(hint); sec.appendChild(ta);
-  return sec;
-}
-
-/* ── Dashboard ── */
-function renderDash(){
-  var totE=0, totP=0, totM=0;
-  PEOPLE.forEach(function(p){
-    p.logs.forEach(function(l){
-      var e=getLog(p.id,l.id); totE+=e.length;
-      e.forEach(function(x){ if(x.photo) totP++; });
-    });
-    p.memos.forEach(function(m){ if(getMemo(p.id,m.id).trim()) totM++; });
-  });
-
-  document.getElementById('dgrid').innerHTML=
-    '<div class="dbox"><div class="num">'+totE+'</div><div class="lbl">총 기록 건수</div></div>'+
-    '<div class="dbox"><div class="num">'+totP+'</div><div class="lbl">📷 사진 표시</div></div>'+
-    '<div class="dbox"><div class="num">'+totM+'</div><div class="lbl">현장 메모 수</div></div>'+
-    '<div class="dbox"><div class="num">'+PEOPLE.length+'</div><div class="lbl">참여 인원</div></div>';
-
-  var list=document.getElementById('dplist'); list.innerHTML='';
-  PEOPLE.forEach(function(p){
-    var n=totalEntries(p.id);
-    var subs=p.logs.map(function(l){ return l.label+' '+getLog(p.id,l.id).length+'건'; }).join(' · ');
-    var btn=document.createElement('button'); btn.className='dprow';
-    btn.innerHTML='<div><div class="nm">'+p.name+' <span style="font-weight:400;font-size:12px;color:var(--ink2)">'+p.role+'</span></div>'+
-      '<div class="sub">'+subs+'</div></div>'+
-      '<span class="dc">'+n+'건</span>';
-    btn.addEventListener('click',function(){ openDetail(p.id); });
-    list.appendChild(btn);
-  });
-}
-
-/* ── Report ── */
-function genReport(){
-  var lines=[];
-  lines.push('인터참코리아 2026 현장 조사 결과 취합본');
-  lines.push('생성: '+new Date().toLocaleString('ko-KR'));
-  lines.push('');
-  lines.push('아래 각 담당자별 현장 기록을 분석하여:');
-  lines.push('① 핵심 발견사항  ② 후속 액션 아이템  ③ 우선순위 판단');
-  lines.push('을 정리한 팀 현장 조사 보고서를 작성해 주세요.');
-  lines.push('');
-  lines.push('═'.repeat(36));
-
-  PEOPLE.forEach(function(p){
-    if(totalEntries(p.id)===0) return;
-    lines.push('');
-    lines.push('■ '+p.name+' | '+p.role+' | '+DAYLABEL[p.day]);
-    if(p.id==='lgy') lines.push('  * 수출 관심 여부만 현장 확인 / 사후 연락 시 → 총판 국가·지역별 인증·단가·키 셀링포인트 확인 필요');
-    lines.push('');
-    p.logs.forEach(function(log){
-      var e=getLog(p.id,log.id);
-      if(!e.length) return;
-      lines.push('▶ '+log.label+' ('+e.length+'건)');
-      e.forEach(function(x,i){
-        lines.push('  '+(i+1)+'. '+(x.title||'(미입력)')+(x.photo?' [사진O]':''));
-        if(x.note) lines.push(
+  card.appe
