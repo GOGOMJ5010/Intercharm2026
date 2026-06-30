@@ -103,6 +103,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .imta:focus{outline:none;border-color:var(--gl);}
 .imbtn{width:100%;padding:10px;background:var(--ink);color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;}
 
+/* Photo thumbnail */
+.thumb-wrap{margin:8px 0 2px;position:relative;display:inline-block;}
+.thumb-img{width:80px;height:80px;object-fit:cover;border-radius:8px;display:block;border:1px solid var(--line);}
+.thumb-del{position:absolute;top:-7px;right:-7px;background:var(--ink);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;}
+
 /* Tip box */
 .tipbox{background:#fff8e7;border:1px solid #f0d080;border-radius:12px;padding:12px 14px;margin-bottom:18px;}
 .tiptit{font-size:12px;font-weight:700;color:#8a6200;margin-bottom:7px;}
@@ -456,6 +461,35 @@ function importData(json){
   }
 }
 
+/* ── Photo ── */
+function compressImage(file, callback){
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    var img=new Image();
+    img.onload=function(){
+      var MAX=800;
+      var w=img.width, h=img.height;
+      if(w>MAX){ h=Math.round(h*MAX/w); w=MAX; }
+      if(h>MAX){ w=Math.round(w*MAX/h); h=MAX; }
+      var canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      callback(canvas.toDataURL('image/jpeg',0.7));
+    };
+    img.src=ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function updateThumb(wrap, dataUrl, onDelete){
+  wrap.innerHTML='';
+  if(!dataUrl) return;
+  var img=document.createElement('img'); img.className='thumb-img'; img.src=dataUrl;
+  var del=document.createElement('button'); del.className='thumb-del'; del.textContent='×';
+  del.addEventListener('click',function(e){ e.stopPropagation(); if(onDelete) onDelete(); });
+  wrap.appendChild(img); wrap.appendChild(del);
+}
+
 /* ── Toast ── */
 function toast(msg){
   var t=document.getElementById('toast');
@@ -578,11 +612,32 @@ function buildEntry(pid, log, entries, idx){
   ti.type='text'; ti.className='etitle'; ti.placeholder=log.field; ti.value=e.title||'';
   ti.addEventListener('input',function(){ e.title=ti.value; saveS(pid); });
 
+  // Hidden camera input
+  var fi=document.createElement('input');
+  fi.type='file'; fi.accept='image/*'; fi.capture='environment';
+  fi.style.cssText='display:none;position:absolute;';
+  card.appendChild(fi);
+
   var pb=document.createElement('button');
-  pb.className='pbtn'+(e.photo?' on':''); pb.title='사진 찍음'; pb.textContent='📷';
-  pb.addEventListener('click',function(){
-    e.photo=!e.photo; pb.classList.toggle('on',e.photo); saveS(pid);
-    toast(e.photo?'📷 사진 표시':'사진 표시 해제');
+  pb.className='pbtn'+(e.photo?' on':'');
+  pb.title='사진 찍기';
+  pb.textContent='📷';
+  pb.addEventListener('click',function(){ fi.click(); });
+
+  fi.addEventListener('change',function(){
+    if(!fi.files||!fi.files[0]) return;
+    pb.textContent='⏳';
+    compressImage(fi.files[0],function(dataUrl){
+      e.photo=dataUrl; saveS(pid);
+      pb.classList.add('on'); pb.textContent='📷';
+      updateThumb(thumbWrap, dataUrl, function(){
+        e.photo=null; saveS(pid);
+        pb.classList.remove('on');
+        thumbWrap.innerHTML='';
+      });
+      toast('📷 사진 저장됨');
+    });
+    fi.value='';
   });
 
   var db=document.createElement('button');
@@ -595,6 +650,14 @@ function buildEntry(pid, log, entries, idx){
   row.appendChild(ti); row.appendChild(pb); row.appendChild(db);
   card.appendChild(row);
 
+  // Thumbnail
+  var thumbWrap=document.createElement('div'); thumbWrap.className='thumb-wrap';
+  if(e.photo) updateThumb(thumbWrap, e.photo, function(){
+    e.photo=null; saveS(pid); pb.classList.remove('on'); thumbWrap.innerHTML='';
+  });
+  card.appendChild(thumbWrap);
+
+  // Note
   var nrow=document.createElement('div'); nrow.className='nrow';
   var ntog=document.createElement('button');
   ntog.className='ntog'+(e.note?' has':''); ntog.textContent=e.note?'메모 ✓':'+ 메모';
@@ -679,83 +742,4 @@ function genReport(){
       lines.push('▶ '+log.label+' ('+e.length+'건)');
       e.forEach(function(x,i){
         lines.push('  '+(i+1)+'. '+(x.title||'(미입력)')+(x.photo?' [사진O]':''));
-        if(x.note) lines.push('     → '+x.note);
-      });
-      lines.push('');
-    });
-    p.memos.forEach(function(m){
-      var t=getMemo(p.id,m.id).trim();
-      if(!t) return;
-      lines.push('▶ '+m.label);
-      lines.push(t);
-      lines.push('');
-    });
-    lines.push('─'.repeat(28));
-  });
-
-  return lines.join('\n');
-}
-
-/* ── Events ── */
-document.querySelectorAll('.tab').forEach(function(t){
-  t.addEventListener('click',function(){ switchTab(t.dataset.tab); });
-});
-
-document.getElementById('backBtn').addEventListener('click',function(){
-  switchTab('people');
-});
-
-document.getElementById('rbtn').addEventListener('click',function(){
-  document.getElementById('mout').value=genReport();
-  document.getElementById('mbg').classList.add('on');
-});
-
-document.getElementById('closebtn').addEventListener('click',function(){
-  document.getElementById('mbg').classList.remove('on');
-});
-
-document.getElementById('mbg').addEventListener('click',function(e){
-  if(e.target===this) this.classList.remove('on');
-});
-
-document.getElementById('cbtn').addEventListener('click',function(){
-  var ta=document.getElementById('mout');
-  ta.select();
-  navigator.clipboard.writeText(ta.value)
-    .then(function(){ toast('📋 클립보드에 복사됨!'); })
-    .catch(function(){ try{ document.execCommand('copy'); toast('복사됨!'); }catch(e){} });
-});
-
-document.getElementById('sclosebtn').addEventListener('click',function(){
-  document.getElementById('smbg').classList.remove('on');
-});
-document.getElementById('smbg').addEventListener('click',function(e){
-  if(e.target===this) this.classList.remove('on');
-});
-document.getElementById('scbtn').addEventListener('click',function(){
-  var ta=document.getElementById('smout');
-  ta.select(); ta.setSelectionRange(0,99999);
-  navigator.clipboard.writeText(ta.value)
-    .then(function(){ toast('📋 복사됐어요! 카톡에 붙여넣기 해주세요'); })
-    .catch(function(){ try{ document.execCommand('copy'); toast('복사됐어요!'); }catch(e){} });
-});
-
-document.getElementById('imbtn').addEventListener('click',function(){
-  var ta=document.getElementById('imta');
-  if(importData(ta.value)) ta.value='';
-});
-
-/* ── Init ── */
-loadAll();
-updateTopbar();
-if(!myId){
-  renderGrid();
-  showIdPicker();
-} else {
-  openDetail(myId);
-}
-
-})();
-</script>
-</body>
-</html>
+        if(x.note) lines.push(
