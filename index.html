@@ -139,6 +139,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 </style>
 </head>
 <body>
+<button class="scroll-top" id="scrollTopBtn" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
 <div class="app">
 
 <div class="topbar">
@@ -282,39 +283,6 @@ var PEOPLE = [
     ],
     memos:[
       {id:'trend', label:'트렌드 키워드', hint:'K-뷰티 키워드·테마 메모'}
-    ]
-  },
-  {
-    id:'kth', name:'김태희', role:'BM·OEM 제형개발', day:'day2',
-    tip:{
-      title:'🏭 OEM/ODM 제조사 탐색 가이드 — 이런 것들을 봐요',
-      items:[
-        'OEM/ODM 제조사 부스 위주로 돌기 — 고객 의뢰 받을 때 연락할 수 있는 제조사 확보',
-        '제형 구현 가능 여부 확인 — 현재 고객 요청 중인 제형·성분을 만들 수 있는지 물어보기',
-        '샘플은 일단 받기 — 현장에서 검토 어려워도 사무실에서 고객 제안할 때 활용',
-        '단가·MOQ·리드타임 메모 — 제조사마다 조건이 달라서 비교가 핵심',
-        '카탈로그·스펙시트 수집 — 고객 의뢰 들어왔을 때 빠르게 매칭하기 위한 사전 자료'
-      ]
-    },
-    logs:[
-      {
-        id:'manufacturers',
-        label:'OEM/ODM 제조사',
-        field:'제조사명',
-        hint:'컨택한 제조사마다 + 추가',
-        notePh:'가능 제형·성분, 단가·MOQ·리드타임, 샘플 받음 여부, 담당자 연락처'
-      },
-      {
-        id:'samples',
-        label:'수집 샘플·카탈로그',
-        field:'제조사·제품명',
-        hint:'받은 샘플·카탈로그마다 + 추가',
-        notePh:'제형 특징, 어떤 고객 의뢰에 활용 가능할지'
-      }
-    ],
-    memos:[
-      {id:'client_req', label:'현재 고객 의뢰 대조', hint:'현재 진행 중인 고객 OEM 의뢰 중 이번 전시에서 해결 가능한 것 메모'},
-      {id:'followup', label:'사후 연락 제조사', hint:'돌아와서 우선 연락할 제조사와 확인할 내용'}
     ]
   },
   {
@@ -647,6 +615,7 @@ function openDetail(pid){
   curPid=pid;
   showScreen('detail');
   renderDetail(pid);
+  updateScrollTopBtn(pid);
 }
 
 function renderDetail(pid){
@@ -679,6 +648,7 @@ function renderDetail(pid){
   }
   p.logs.forEach(function(log){ body.appendChild(buildLogSec(pid,log)); });
   p.memos.forEach(function(memo){ body.appendChild(buildMemoSec(pid,memo)); });
+  updateScrollTopBtn(pid);
 }
 
 function buildLogSec(pid, log){
@@ -697,6 +667,7 @@ function buildLogSec(pid, log){
     entries.push({title:'',note:'',photos:[]});
     saveS(pid);
     cnt.textContent=entries.length+'건';
+    updateScrollTopBtn(pid);
     var list=document.getElementById('list-'+pid+'-'+log.id);
     var card=buildEntry(pid,log,entries,entries.length-1);
     list.appendChild(card);
@@ -916,6 +887,15 @@ document.getElementById('imbtn').addEventListener('click',function(){
   var ta=document.getElementById('imta');
   if(importData(ta.value)) ta.value='';
 });
+
+function updateScrollTopBtn(pid){
+  var btn=document.getElementById('scrollTopBtn');
+  if(!btn) return;
+  var s=state[pid]||{};
+  var total=0;
+  if(s.logs) Object.keys(s.logs).forEach(function(lid){ total+=(s.logs[lid]||[]).length; });
+  if(total>=3){ btn.classList.add('vis'); } else { btn.classList.remove('vis'); }
+}
 
 /* ── Init ── */
 loadAll();
