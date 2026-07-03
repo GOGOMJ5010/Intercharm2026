@@ -103,10 +103,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .imta:focus{outline:none;border-color:var(--gl);}
 .imbtn{width:100%;padding:10px;background:var(--ink);color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;}
 
-/* Photo thumbnail */
-.thumb-wrap{margin:8px 0 2px;position:relative;display:inline-block;}
-.thumb-img{width:80px;height:80px;object-fit:cover;border-radius:8px;display:block;border:1px solid var(--line);}
+/* Photo thumbnails */
+.photos-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px;}
+.thumb-wrap{position:relative;display:inline-block;}
+.thumb-img{width:72px;height:72px;object-fit:cover;border-radius:8px;display:block;border:1px solid var(--line);}
 .thumb-del{position:absolute;top:-7px;right:-7px;background:var(--ink);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;}
+.add-photo-btn{width:72px;height:72px;border:1.5px dashed var(--gl);border-radius:8px;background:var(--gs);color:var(--g);font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+
+/* Scroll to top */
+.scroll-top{position:fixed;bottom:24px;right:18px;width:42px;height:42px;background:var(--ink);color:#fff;border:none;border-radius:50%;font-size:18px;cursor:pointer;z-index:100;display:none;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.25);}
+.scroll-top.vis{display:flex;}
 
 /* Tip box */
 .tipbox{background:#fff8e7;border:1px solid #f0d080;border-radius:12px;padding:12px 14px;margin-bottom:18px;}
@@ -356,6 +362,28 @@ var PEOPLE = [
       {id:'insight', label:'핵심 인사이트', hint:'경영진 보고서용 발견 내용·결정사항'},
       {id:'pri', label:'우선순위 조정', hint:'팀원별 동선·우선순위 재조정 사항'}
     ]
+  },
+  {
+    id:'jk', name:'정국', role:'중국 용기 공장 조사', day:'day2',
+    tip:{
+      title:'🏭 중국 용기 공장 조사 가이드',
+      items:[
+        '중국 용기·패키징 제조사 부스 위주로 방문',
+        '용기 소재·형태·MOQ·단가 현장에서 바로 확인',
+        '샘플은 반드시 받기 — 재질감·마감 품질 직접 확인',
+        '납기 리드타임·인증(SGS 등) 보유 여부 체크',
+        '담당자 명함 반드시 확보, 위챗 ID도 함께'
+      ]
+    },
+    logs:[
+      {id:'factories', label:'용기 공장 방문', field:'공장명 / 제품',
+       hint:'방문한 중국 용기 공장마다 + 추가',
+       notePh:'용기 종류·소재, 단가·MOQ, 납기, 샘플 받음 여부, 담당자 연락처'}
+    ],
+    memos:[
+      {id:'quality', label:'품질·마감 비교', hint:'공장별 품질 수준·마감 차이 비교 메모'},
+      {id:'followup', label:'사후 연락 우선순위', hint:'귀사 후 우선 연락할 공장과 확인할 내용'}
+    ]
   }
 ];
 
@@ -449,7 +477,7 @@ function buildExportPayload(pid){
   var logsClean={};
   if(s.logs) Object.keys(s.logs).forEach(function(lid){
     logsClean[lid]=(s.logs[lid]||[]).map(function(e){
-      return {title:e.title,note:e.note,photo:!!e.photo};
+      return {title:e.title,note:e.note,photo:!!!!(e.photos&&e.photos.length)};
     });
   });
   return {v:'1',pid:pid,name:p.name,role:p.role,ts:new Date().toISOString(),
@@ -461,13 +489,17 @@ function collectPhotoFiles(pid){
   if(!s.logs) return files;
   Object.keys(s.logs).forEach(function(lid){
     (s.logs[lid]||[]).forEach(function(e,i){
-      if(e.photo&&e.photo.startsWith('data:')){
-        try{
-          var blob=dataURLtoBlob(e.photo);
-          var name=(e.title||('사진'+(i+1))).replace(/[^가-힣\w]/g,'_').substring(0,20)+'.jpg';
-          files.push(new File([blob],name,{type:'image/jpeg'}));
-        }catch(err){}
-      }
+      var photos = e.photos || (e.photo ? [e.photo] : []);
+      photos.forEach(function(dataUrl, pi){
+        if(dataUrl && dataUrl.startsWith('data:')){
+          try{
+            var blob=dataURLtoBlob(dataUrl);
+            var base=(e.title||('사진'+(i+1))).replace(/[^가-힣\w]/g,'_').substring(0,20);
+            var name=base+(photos.length>1?'_'+(pi+1):'')+'.jpg';
+            files.push(new File([blob], name, {type:'image/jpeg'}));
+          }catch(ex){}
+        }
+      });
     });
   });
   return files;
@@ -662,7 +694,7 @@ function buildLogSec(pid, log){
 
   var add=document.createElement('button'); add.className='add-btn'; add.textContent='+ 추가';
   add.addEventListener('click',function(){
-    entries.push({title:'',note:'',photo:false});
+    entries.push({title:'',note:'',photos:[]});
     saveS(pid);
     cnt.textContent=entries.length+'건';
     var list=document.getElementById('list-'+pid+'-'+log.id);
@@ -686,6 +718,10 @@ function buildLogSec(pid, log){
 
 function buildEntry(pid, log, entries, idx){
   var e=entries[idx];
+  // Backward compat: migrate e.photo → e.photos
+  if(e.photo && !e.photos){ e.photos=[e.photo]; e.photo=null; saveS(pid); }
+  if(!e.photos) e.photos=[];
+
   var card=document.createElement('div'); card.className='ecard';
 
   var row=document.createElement('div'); row.className='erow';
@@ -694,34 +730,6 @@ function buildEntry(pid, log, entries, idx){
   ti.type='text'; ti.className='etitle'; ti.placeholder=log.field; ti.value=e.title||'';
   ti.addEventListener('input',function(){ e.title=ti.value; saveS(pid); });
 
-  // Hidden camera input
-  var fi=document.createElement('input');
-  fi.type='file'; fi.accept='image/*'; fi.capture='environment';
-  fi.style.cssText='display:none;position:absolute;';
-  card.appendChild(fi);
-
-  var pb=document.createElement('button');
-  pb.className='pbtn'+(e.photo?' on':'');
-  pb.title='사진 찍기';
-  pb.textContent='📷';
-  pb.addEventListener('click',function(){ fi.click(); });
-
-  fi.addEventListener('change',function(){
-    if(!fi.files||!fi.files[0]) return;
-    pb.textContent='⏳';
-    compressImage(fi.files[0],function(dataUrl){
-      e.photo=dataUrl; saveS(pid);
-      pb.classList.add('on'); pb.textContent='📷';
-      updateThumb(thumbWrap, dataUrl, function(){
-        e.photo=null; saveS(pid);
-        pb.classList.remove('on');
-        thumbWrap.innerHTML='';
-      });
-      toast('📷 사진 저장됨');
-    });
-    fi.value='';
-  });
-
   var db=document.createElement('button');
   db.className='dbtn'; db.textContent='×';
   db.addEventListener('click',function(){
@@ -729,15 +737,47 @@ function buildEntry(pid, log, entries, idx){
     entries.splice(idx,1); saveS(pid); renderDetail(pid);
   });
 
-  row.appendChild(ti); row.appendChild(pb); row.appendChild(db);
+  row.appendChild(ti); row.appendChild(db);
   card.appendChild(row);
 
-  // Thumbnail
-  var thumbWrap=document.createElement('div'); thumbWrap.className='thumb-wrap';
-  if(e.photo) updateThumb(thumbWrap, e.photo, function(){
-    e.photo=null; saveS(pid); pb.classList.remove('on'); thumbWrap.innerHTML='';
+  // Photos row
+  var photosRow=document.createElement('div'); photosRow.className='photos-row';
+
+  function renderPhotos(){
+    photosRow.innerHTML='';
+    e.photos.forEach(function(dataUrl, pi){
+      var wrap=document.createElement('div'); wrap.className='thumb-wrap';
+      var img=document.createElement('img'); img.className='thumb-img'; img.src=dataUrl;
+      var del=document.createElement('button'); del.className='thumb-del'; del.textContent='×';
+      del.addEventListener('click',function(){
+        e.photos.splice(pi,1); saveS(pid); renderPhotos();
+      });
+      wrap.appendChild(img); wrap.appendChild(del);
+      photosRow.appendChild(wrap);
+    });
+    // Add-photo button
+    var addBtn=document.createElement('button'); addBtn.className='add-photo-btn';
+    addBtn.textContent='📷'; addBtn.title='사진 추가';
+    addBtn.addEventListener('click',function(){ fi.click(); });
+    photosRow.appendChild(addBtn);
+  }
+
+  // Hidden camera input
+  var fi=document.createElement('input');
+  fi.type='file'; fi.accept='image/*'; fi.capture='environment';
+  fi.style.cssText='display:none;position:absolute;';
+  fi.addEventListener('change',function(){
+    if(!fi.files||!fi.files[0]) return;
+    compressImage(fi.files[0],function(dataUrl){
+      e.photos.push(dataUrl); saveS(pid); renderPhotos();
+      toast('📷 사진 저장됨 ('+e.photos.length+'장)');
+    });
+    fi.value='';
   });
-  card.appendChild(thumbWrap);
+  card.appendChild(fi);
+
+  renderPhotos();
+  card.appendChild(photosRow);
 
   // Note
   var nrow=document.createElement('div'); nrow.className='nrow';
@@ -818,7 +858,7 @@ function genReport(){
       if(!e.length) return;
       lines.push('▶ '+log.label+' ('+e.length+'건)');
       e.forEach(function(x,i){
-        lines.push('  '+(i+1)+'. '+(x.title||'(미입력)')+(x.photo?' [사진O]':''));
+        lines.push('  '+(i+1)+'. '+(x.title||'(미입력)')+(x.photos&&x.photos.length?' [사진'+x.photos.length+'장]':''));
         if(x.note) lines.push('     → '+x.note);
       });
       lines.push('');
