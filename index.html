@@ -102,6 +102,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .imta{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px;font-size:12px;font-family:monospace;resize:none;min-height:64px;background:#fbfbfa;color:var(--ink);}
 .imta:focus{outline:none;border-color:var(--gl);}
 .imbtn{width:100%;padding:10px;background:var(--ink);color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;}
+.imp-file-btn{width:100%;padding:10px;background:var(--gs);color:var(--g);border:2px dashed var(--gl);border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;text-align:center;}
+.imp-or{text-align:center;font-size:11px;color:var(--ink3);margin:6px 0;}
 
 /* Photo thumbnails */
 .photos-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px;}
@@ -171,7 +173,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div id="dplist"></div>
   <div class="imp-box">
     <p class="imp-lbl">📥 팀원 데이터 가져오기</p>
-    <p class="imp-hint">팀원이 카톡으로 보낸 데이터를 아래에 붙여넣으세요.<br>한 명씩 가져오기 누르면 자동으로 반영됩니다.</p>
+    <p class="imp-hint">카톡으로 받은 <b>.txt 파일</b>을 직접 첨부하거나, 텍스트를 붙여넣으세요.</p>
+    <input type="file" id="imfile" accept=".txt,.json,text/plain" style="display:none;">
+    <label for="imfile" class="imp-file-btn">📎 파일 첨부로 가져오기</label>
+    <p class="imp-or">── 또는 텍스트 직접 붙여넣기 ──</p>
     <textarea class="imta" id="imta" placeholder="팀원 공유 데이터를 여기에 붙여넣기…" rows="3"></textarea>
     <button class="imbtn" id="imbtn">가져오기</button>
   </div>
@@ -886,6 +891,20 @@ document.getElementById('scbtn').addEventListener('click',function(){
 document.getElementById('imbtn').addEventListener('click',function(){
   var ta=document.getElementById('imta');
   if(importData(ta.value)) ta.value='';
+});
+document.getElementById('imfile').addEventListener('change',function(){
+  var file=this.files[0];
+  if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var text=e.target.result;
+    if(importData(text)){
+      document.getElementById('imta').value='';
+      toast('✅ '+file.name+' 가져오기 완료');
+    }
+  };
+  reader.readAsText(file,'utf-8');
+  this.value='';
 });
 
 function updateScrollTopBtn(pid){
